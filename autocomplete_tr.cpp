@@ -1,248 +1,302 @@
-#include <iostream>
+
+         #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
 #include <algorithm>
-#include <string>
-#include <cstring>
+#include <unordered_map>
+
 using namespace std;
-class Node
-{
-  public:
-    Node()
-    {
-        mContent = ' ';
-        mMarker = false;
-    }
-    ~Node() {}
-    char content()
-    {
-        return mContent;
-    }
-    void setContent(char c)
-    {
-        mContent = c;
-    }
-    bool wordMarker()
-    {
-        return mMarker;
-    }
-    void setWordMarker()
-    {
-        mMarker = true;
-    }
-    Node *findChild(char c);
-    void appendChild(Node *child)
 
-    {
-        mChildren.push_back(child);
-    }
-    vector<Node *> children()
-    {
-        return mChildren;
-    }
+class TrieNode {
+public:
+    bool isWord;
+    unordered_map<char, TrieNode*> children;
 
-  private:
-    char mContent;
-    bool mMarker;
-    vector<Node *> mChildren;
+    TrieNode() {
+        isWord = false;
+    }
 };
-Node *Node::findChild(char c)
-{
-    for (int i = 0; i < mChildren.size(); i++)
-    {
-        Node *tmp = mChildren.at(i);
-        if (tmp->content() == c)
-        {
-            return tmp;
+
+class SmartDictionary {
+private:
+    TrieNode* root;
+
+    void collectWords(TrieNode* node, string current,
+                      vector<string>& results) {
+        if (node == nullptr || results.size() >= 10)
+            return;
+
+        if (node->isWord)
+            results.push_back(current);
+
+        for (auto& pair : node->children) {
+            collectWords(node->children[pair.first],
+                         current + pair.first,
+                         results);
         }
     }
-    return NULL;
-}
-class Trie
-{
-  public:
-    Trie();
-    ~Trie();
-    void addWord(string s);
-    bool searchWord(string s);
-    bool autoComplete(string s, vector<string> &);
-    void parseTree(Node *current, char *s, vector<string> &, bool &loop);
 
-  private:
-    Node *root;
+    int editDistance(const string& a, const string& b) {
+        int n = a.size();
+        int m = b.size();
+
+        vector<vector<int>> dp(n + 1,
+                               vector<int>(m + 1));
+
+        for (int i = 0; i <= n; i++)
+            dp[i][0] = i;
+
+        for (int j = 0; j <= m; j++)
+            dp[0][j] = j;
+
+        for (int i = 1; i <= n; i++) {
+            for (int j = 1; j <= m; j++) {
+
+                if (a[i - 1] == b[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1];
+                } else {
+                    dp[i][j] = 1 + min({
+                        dp[i - 1][j],
+                        dp[i][j - 1],
+                        dp[i - 1][j - 1]
+                    });
+                }
+            }
+        }
+
+        return dp[n][m];
+    }
+
+    void collectAllWords(TrieNode* node,
+                         string current,
+                         vector<string>& words) {
+        if (node == nullptr)
+            return;
+
+        if (node->isWord)
+            words.push_back(current);
+
+        for (auto& pair : node->children) {
+            collectAllWords(node->children[pair.first],
+                            current + pair.first,
+                            words);
+        }
+    }
+
+public:
+
+    SmartDictionary() {
+        root = new TrieNode();
+    }
+
+    void insertWord(string word) {
+        transform(word.begin(), word.end(),
+                  word.begin(), ::tolower);
+
+        TrieNode* current = root;
+
+        for (char c : word) {
+            if (current->children.find(c) ==
+                current->children.end()) {
+
+                current->children[c] = new TrieNode();
+            }
+
+            current = current->children[c];
+        }
+
+        current->isWord = true;
+    }
+
+    bool searchWord(string word) {
+        transform(word.begin(), word.end(),
+                  word.begin(), ::tolower);
+
+        TrieNode* current = root;
+
+        for (char c : word) {
+            if (current->children.find(c) ==
+                current->children.end()) {
+                return false;
+            }
+
+            current = current->children[c];
+        }
+
+        return current->isWord;
+    }
+
+    vector<string> autocomplete(string prefix) {
+        transform(prefix.begin(), prefix.end(),
+                  prefix.begin(), ::tolower);
+
+        TrieNode* current = root;
+
+        for (char c : prefix) {
+            if (current->children.find(c) ==
+                current->children.end()) {
+                return {};
+            }
+
+            current = current->children[c];
+        }
+
+        vector<string> suggestions;
+        collectWords(current, prefix, suggestions);
+
+        sort(suggestions.begin(), suggestions.end());
+
+        return suggestions;
+    }
+
+    vector<string> spellingSuggestions(string word) {
+        transform(word.begin(), word.end(),
+                  word.begin(), ::tolower);
+
+        vector<string> allWords;
+        collectAllWords(root, "", allWords);
+
+        vector<pair<int, string>> candidates;
+
+        for (const string& candidate : allWords) {
+            int distance = editDistance(word, candidate);
+
+            if (distance <= 2) {
+                candidates.push_back(
+                    {distance, candidate}
+                );
+            }
+        }
+
+        sort(candidates.begin(), candidates.end());
+
+        vector<string> result;
+
+        for (int i = 0;
+             i < candidates.size() && i < 5;
+             i++) {
+
+            result.push_back(candidates[i].second);
+        }
+
+        return result;
+    }
 };
-Trie::Trie()
-{
-    root = new Node();
-}
-Trie::~Trie()
-{
-    // Free memory
-}
-void Trie::addWord(string s)
-{
-    Node *current = root;
-    if (s.length() == 0)
-    {
-        current->setWordMarker();
+
+void loadDictionary(SmartDictionary& dictionary,
+                    const string& filename) {
+
+    ifstream file(filename);
+
+    if (!file.is_open()) {
+        cout << "Could not open dictionary file.\n";
         return;
     }
-    for (int i = 0; i < s.length(); i++)
-    {
-        Node *child = current->findChild(s[i]);
-        if (child != NULL)
 
-        {
-            current = child;
-        }
-        else
-        {
-            Node *tmp = new Node();
-            tmp->setContent(s[i]);
-            current->appendChild(tmp);
-            current = tmp;
-        }
-        if (i == s.length() - 1)
-            current->setWordMarker();
-    }
-}
-bool Trie::searchWord(string s)
-{
-    Node *current = root;
-    while (current != NULL)
-    {
-        for (int i = 0; i < s.length(); i++)
-        {
-            Node *tmp = current->findChild(s[i]);
-            if (tmp == NULL)
-                return false;
-            current = tmp;
-        }
-        if (current->wordMarker())
-            return true;
-        else
-            return false;
-    }
-    return false;
-}
-bool Trie::autoComplete(std::string s, std::vector<string> &res)
-{
-    Node *current = root;
-    for (int i = 0; i < s.length(); i++)
-    {
-        Node *tmp = current->findChild(s[i]);
-        if (tmp == NULL)
-            return false;
-        current = tmp;
-    }
-    char c[100];
-    strcpy(c, s.c_str());
-    bool loop = true;
-    parseTree(current, c, res, loop);
-    return true;
-}
-void Trie::parseTree(Node *current, char *s, std::vector<string> &res, bool &loop)
-{
-    char k[100] = {0};
-    char a[2] = {0};
-    if (loop)
-    {
-        if (current != NULL)
+    string word;
 
-        {
-            if (current->wordMarker() == true)
-            {
-                res.push_back(s);
-                if (res.size() > 15)
-                    loop = false;
-            }
-            vector<Node *> child = current->children();
-            for (int i = 0; i < child.size() && loop; i++)
-            {
-                strcpy(k, s);
-                a[0] = child[i]->content();
-                a[1] = '\0';
-                strcat(k, a);
-                if (loop)
-                    parseTree(child[i], k, res, loop);
-            }
-        }
+    while (file >> word) {
+        dictionary.insertWord(word);
     }
-}
-bool loadDictionary(Trie *trie, string filename)
-{
-    ifstream words;
-    ifstream input;
-    words.open(filename.c_str());
-    if (!words.is_open())
-    {
-        cout << "Dictionary file Not Open" << endl;
-        return false;
-    }
-    while (!words.eof())
-    {
-        char s[100];
-        words >> s;
-        trie->addWord(s);
-    }
-    return true;
-}
-int main()
-{
-    system("color 1E");
-    Trie *trie = new Trie();
-    int mode;
-    cout << "Loading dictionary" << endl;
-    loadDictionary(trie, "words.txt");
-    while (1)
-    {
-        cout << endl
-             << endl;
-        cout << "Interactive mode,press " << endl;
-        cout << "1: Auto Complete Feature" << endl;
-        cout << "2: Quit" << endl
-             << endl;
-        cin >> mode;
-        switch (mode)
-        {
-        case 1: //Auto complete
-        {
 
-            string s;
-            char addNew;
-            cin >> s;
-            transform(s.begin(), s.end(), s.begin(), ::tolower);
-            vector<string> autoCompleteList;
-            trie->autoComplete(s, autoCompleteList);
-            if (autoCompleteList.size() == 0)
-            {
-                cout << "No suggestions" << endl;
-                cout << "Want to add this to the dictionary?(y/n): ";
-                cin >> addNew;
-                if (addNew == 'y' || addNew == 'Y')
-                {
-                    trie->addWord(s);
-                    cout << "Word " << s << " added to the dictionary." << endl;
-                }
-                else
-                    cout << "Word " << s << " was not added to the dictionary" << endl;
-            }
+    file.close();
+}
+
+int main() {
+
+    SmartDictionary dictionary;
+
+    loadDictionary(dictionary, "words.txt");
+
+    int choice;
+
+    while (true) {
+
+        cout << "\n==============================\n";
+        cout << " Smart Dictionary System\n";
+        cout << "==============================\n";
+
+        cout << "1. Search word\n";
+        cout << "2. Autocomplete\n";
+        cout << "3. Spelling suggestion\n";
+        cout << "4. Add new word\n";
+        cout << "5. Exit\n";
+
+        cout << "\nEnter choice: ";
+        cin >> choice;
+
+        if (choice == 1) {
+
+            string word;
+            cout << "Enter word: ";
+            cin >> word;
+
+            if (dictionary.searchWord(word))
+                cout << "Word found!\n";
             else
-            {
-                cout << "Autocomplete reply :" << endl;
-                for (int i = 0; i < autoCompleteList.size(); i++)
-                {
-                    cout << "\t \t " << autoCompleteList[i] << endl;
-                }
+                cout << "Word not found.\n";
+        }
+
+        else if (choice == 2) {
+
+            string prefix;
+            cout << "Enter prefix: ";
+            cin >> prefix;
+
+            vector<string> suggestions =
+                dictionary.autocomplete(prefix);
+
+            if (suggestions.empty()) {
+                cout << "No autocomplete suggestions.\n";
+            } else {
+                cout << "\nSuggestions:\n";
+
+                for (const string& word : suggestions)
+                    cout << "- " << word << "\n";
             }
         }
-            continue;
-        case 2:
-            delete trie;
-            return 0;
-        default:
-            continue;
+
+        else if (choice == 3) {
+
+            string word;
+            cout << "Enter possibly misspelled word: ";
+            cin >> word;
+
+            vector<string> suggestions =
+                dictionary.spellingSuggestions(word);
+
+            if (suggestions.empty()) {
+                cout << "No close spelling suggestions found.\n";
+            } else {
+                cout << "\nDid you mean:\n";
+
+                for (const string& suggestion : suggestions)
+                    cout << "- " << suggestion << "\n";
+            }
+        }
+
+        else if (choice == 4) {
+
+            string word;
+            cout << "Enter new word: ";
+            cin >> word;
+
+            dictionary.insertWord(word);
+
+            cout << "Word added successfully!\n";
+        }
+
+        else if (choice == 5) {
+
+            cout << "Goodbye!\n";
+            break;
+        }
+
+        else {
+            cout << "Invalid choice.\n";
         }
     }
+
+    return 0;
 }
